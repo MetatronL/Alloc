@@ -2,12 +2,13 @@
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <stdio.h>
 
 /*
 	In order to print debugging informations:
-	#include print_debug_info_malloc
+	#define print_debug_info_malloc
 */
-
+#define print_debug_info_malloc 0  
 
 struct block_meta{
 	size_t size;	//size of a memory block
@@ -23,7 +24,7 @@ typedef struct block_meta* block_p;
 
 void *global_base = NULL;
 
-struct block_meta create_block_meta(size_t _size, block_m* _next, char _free){
+block_m create_block_meta(size_t _size, block_m* _next, char _free){
 	block_m block;
 	block.next = _next;
 	block.size = _size;
@@ -33,19 +34,18 @@ struct block_meta create_block_meta(size_t _size, block_m* _next, char _free){
 
 
 block_m* pd_request_memory(block_m *last_block_in_chain, size_t size ){
-	block_m *old_position;
-	old_position = sbrk(0);
-	void *new_position = sbrk( size + BLOCK_META_SIZE );
-	if( new_position = (void*)(-1) ){ // Allocation error
+	block_m *old = sbrk(0);
+	void *new = sbrk( size + BLOCK_META_SIZE );
+	if( new == (void*)(-1) ){ // Allocation error
 		#ifdef print_debug_info_malloc
 				printf("mem_alloc: Failed to allocate %u bytes of memory\n",size);
 		#endif
 		return NULL;
 	}
 	if( last_block_in_chain != NULL )
-		last_block_in_chain -> next = old_position;
-	*old_position = create_block_meta(size , NULL, 0);
-	return old_position;
+		last_block_in_chain -> next = old ;
+	*old = create_block_meta(size , NULL, 0);
+	return old;
 }
 
 
@@ -82,6 +82,8 @@ void* pd_malloc(size_t size){
  			block = pd_request_memory( last_block, size );
 			if( block == NULL )	
 				return NULL;
+			block->next = global_base;
+			global_base = block;
 		}else{	/* found free block */
 //To do : split the block if possible
 		block->free = 0;		
@@ -97,7 +99,7 @@ block_m* pd_pointer_to_block(void *ref){
 //	to do
 //check if the block is correct
 //wrong -> return NULL;
-	return (block_m*)ref - 1;
+	return ((block_m*)ref) - 1;
 }
 
 
