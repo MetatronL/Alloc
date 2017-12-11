@@ -15,13 +15,16 @@ struct block_meta{
 	struct block_meta *next;	//next struct in the chain
 };
 
+typedef struct block_meta block_m;
+typedef struct block_meta* block_p;
+
 #define BLOCK_META_SIZE sizeof(struct block_meta)
 
 
 void *global_base = NULL;
 
-struct block_meta create_block_meta(size_t _size, struct block_meta* _next,char _free){
-	struct block_meta block;
+struct block_meta create_block_meta(size_t _size, block_m* _next, char _free){
+	block_m block;
 	block.next = _next;
 	block.size = _size;
 	block.free = _free;
@@ -29,8 +32,8 @@ struct block_meta create_block_meta(size_t _size, struct block_meta* _next,char 
 }
 
 
-struct block_meta* pd_request_memory(struct block_meta *last_block_in_chain, size_t size ){
-	struct block_meta *old_position;
+block_m* pd_request_memory(block_m *last_block_in_chain, size_t size ){
+	block_m *old_position;
 	old_position = sbrk(0);
 	void *new_position = sbrk( size + BLOCK_META_SIZE );
 	if( new_position = (void*)(-1) ){ // Allocation error
@@ -46,8 +49,8 @@ struct block_meta* pd_request_memory(struct block_meta *last_block_in_chain, siz
 }
 
 
-struct block_meta* pd_find_free_block(struct block_meta **last_block,size_t size){
-	struct block_meta *current_block = global_base;
+block_m* pd_find_free_block(block_m **last_block,size_t size){
+	block_m *current_block = global_base;
 	while( 1 == 1 ){
 		if( current_block == NULL )
 			break;
@@ -62,7 +65,7 @@ struct block_meta* pd_find_free_block(struct block_meta **last_block,size_t size
 
 
 void* pd_malloc(size_t size){
-	struct block_meta *block;
+	block_m *block;
 	
 	if( size <= 0 )
 		return NULL;
@@ -73,7 +76,7 @@ void* pd_malloc(size_t size){
 			return NULL;
 		global_base = block;
 	}else{	
-		struct block_meta *last_block = global_base;
+		block_m *last_block = global_base;
 		block = pd_find_free_block(&last_block,size);
 		if( block == NULL){ 	/*failed to find free block -> memory allocation required */
  			block = pd_request_memory( last_block, size );
@@ -88,3 +91,71 @@ void* pd_malloc(size_t size){
 	
 	
 }
+
+
+block_m* pd_pointer_to_block(void *ref){
+//	to do
+//check if the block is correct
+//wrong -> return NULL;
+	return (block_m*)ref - 1;
+}
+
+
+void pd_free(void* source){
+	if( source == NULL )
+		return ;
+	block_m *original_block = pd_pointer_to_block( source );
+	if( original_block == NULL ){
+		#ifdef print_debug_info_malloc
+			printf("mem_alloc: free(void*) received invalid adrress: %p\n",source);
+		#endif
+		return;
+	}	
+	if(  original_block->free == 1 ){
+		#ifdef print_debug_info_malloc
+			printf("mem_alloc: free(void*) received the adrress of a already free block of memory: %p\n",source);
+		#endif
+		return;
+	}	
+
+	original_block->free = 1;
+	
+}
+
+void* realloc(void *source, size_t size){
+	if( source == NULL){
+		#ifdef print_debug_info_malloc
+			printf("mem_alloc: realloc(void*,size_t) received NULL pointer\n");
+		#endif
+		return NULL;
+	}
+	block_m*  block = pd_pointer_to_block(source);
+	if( block == NULL){
+		#ifdef print_debug_info_malloc
+			printf("mem_alloc: realloc(void*,size_t) received invalid adrress: %p\n",source);
+		#endif
+		return NULL;
+	}
+	if( block->size >= size)
+		return source;
+//to be optimized
+	void *new_pointer = pd_malloc(size);
+	if(  new_pointer == NULL )
+		return NULL;
+//errno
+	memcpy(new_pointer , source , block->size );
+	pd_free(source);
+	return new_pointer;
+ 
+}
+
+void *pd_calloc(size_t count, size_t size) {
+  size_t new_size = count * size; 
+// to do: check for overflow.
+  void *result = pd_malloc(new_size);
+  if( result == NULL)
+	return NULL;
+  memset(result, 0, size);
+  return result;
+}
+
