@@ -11,7 +11,7 @@ struct memory_block{
 	struct memory_block* prev;	
 	struct memory_block* next;	 
 	int free;	// boolean value
-	//char data[1]; 	// only for real data zone acces
+	 
 };
 
 typedef struct memory_block  s_block;	//static
@@ -75,7 +75,7 @@ void* try_split_block( p_block b, size_t s){
 	return new;
 }
  
-void* pd_malloc(size_t s){
+void* malloc(size_t s){
 	s  = align4(s);	//align to int
 	p_block b = g_base;
 	
@@ -97,9 +97,9 @@ void* pd_malloc(size_t s){
 }	
 
 
-void* pd_calloc(size_t c, size_t s){
+void* calloc(size_t c, size_t s){
 	size_t size = align4( c * s);
-	size_t *new = pd_malloc(size);
+	size_t *new = malloc(size);
 	if( new ){
 		size_t i , n = size/4;
 		for( i = 0 ; i < n ; ++i)
@@ -138,12 +138,13 @@ p_block fusion(p_block b){
 		
 	}
 	
+	
 	return b;	
 }
 
 
 
-void pd_free(void* source){
+void free(void* source){
 	p_block b = get_block(source);
 
 	if( !valid(b) ){

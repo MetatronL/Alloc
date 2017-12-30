@@ -13,19 +13,19 @@ int main(){
 	
 	
 	for( index = 0 ; index < N; ++index){
-		pointer_array[index] = (int*)pd_malloc( index + 10 );
+		pointer_array[index] = (int*) malloc( index + 10 );
 		
-		pd_free(pointer_array[index]);
+		 free(pointer_array[index]);
 	}
 	
 	for( index = 0 ; index < N; ++index){
-		pointer_array[index] = (int*)pd_malloc( index + 10 );
+		pointer_array[index] = (int*)malloc( index + 10 );
 		
 	}
 
 	for( index = 0 ; index < N; ++index){
 		
-		pd_free(pointer_array[index]);
+		 free(pointer_array[index]);
 		 
 	}
 
