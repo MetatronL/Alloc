@@ -13,22 +13,12 @@ int main(){
 	
 	
 	for( index = 0 ; index < N; ++index){
-		pointer_array[index] = (int*) malloc( index + 10 );
+		pointer_array[index] = (int*) malloc( index + 2048 );
 		
-		 free(pointer_array[index]);
+		// free(pointer_array[index]);
 	}
 	
-	for( index = 0 ; index < N; ++index){
-		pointer_array[index] = (int*)malloc( index + 10 );
-		
-	}
-
-	for( index = 0 ; index < N; ++index){
-		
-		 free(pointer_array[index]);
-		 
-	}
-
+	 
 	
 
 	return 0;
