@@ -13,8 +13,9 @@ int main(){
 	
 	
 	for( index = 0 ; index < N; ++index){
-		pointer_array[index] = (int*) malloc( index + 2048 );
-		
+		pointer_array[index] = (int*) malloc( 4 );
+		printf("\n%llu at %d\n",pointer_array[index],index);		
+
 		// free(pointer_array[index]);
 	}
 	
