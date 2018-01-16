@@ -1,0 +1,19 @@
+# depslib dependency file v1.0
+1516105690 source:/home/antares/Codeblocks/so/main.c
+	<assert.h>
+	<string.h>
+	<sys/types.h>
+	<unistd.h>
+	"pd_malloc.h"
+	<stdio.h>
+	<math.h>
+
+1516105488 /home/antares/Codeblocks/so/pd_malloc.h
+	<unistd.h>
+	<sys/mman.h>
+	<assert.h>
+	<string.h>
+	<sys/types.h>
+	<stdio.h>
+	<limits.h>
+
