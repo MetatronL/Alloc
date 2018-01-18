@@ -9,6 +9,7 @@
 
 
 */
+#define DEBUG_MALLOC 1
 
 #define _GNU_SOURCE 1
 #include <unistd.h>
@@ -23,7 +24,7 @@
 #include <limits.h>
 
 
-#define DEBUG_MALLOC 1
+
 
 /*
 #define DEBUG_MALLOC 1
@@ -91,7 +92,7 @@ struct metadata{
 	struct metadata* prev;
 	unsigned long long total_used_data; // doar prima pagina pe nivel foloseste activ
 	unsigned char size;                 //level-ul paginii
-	unsigned char count;                //nr de elemente folosite
+	size_t count;                //nr de elemente folosite
 	unsigned char total_pagini; // doar prima pagina pe nivel foloseste activ
 	unsigned char full; // doar prima pagina pe nivel foloseste activ
 	//unsigned char to_be_deleted;
@@ -159,7 +160,7 @@ void* create_big_page_pool(size_t  size){       //mappez o zona de mai multe pag
 
 void* create_new_metadata_page(void* next_page){    //mappez o singura pagina
 	char *result = mmap( 0 , PAGE_FILE , PROT_READ | PROT_WRITE , MAP_SHARED | MAP_ANONYMOUS , -1 , 0  );
-	if( result != MAP_FAILED ){
+	if( result == MAP_FAILED ){
 		((meta*)result)->next = next_page;
         #ifdef DEBUG_MALLOC
         printf("Failed to mmap a new page\n");
@@ -199,21 +200,21 @@ char get_level(size_t align_to){
 }
 
 
-unsigned char* table_head[8]  ;
+unsigned char* table_head[10]  ;
 
 
 void calculate_metadata(size_t *total_memory_zones, size_t *local_metadata, size_t *offset, size_t align_to ){
 	*total_memory_zones = PAGE_FILE / align_to ; 	//initial total data zones
 
 	*local_metadata = (*total_memory_zones+7) / 8;		//count of bytes necesary to memorize the metadata
-	*local_metadata -= (*local_metadata+7)/8;
+	//*local_metadata -= (*local_metadata)/(align_to*8) ;
 
 	*offset = align_to - (*local_metadata + META_SZ) % align_to;	//offset necesary to keep data aligned
 
 	if(  *offset == align_to )
 		*offset = 0;
 
-	*total_memory_zones -= ( (*local_metadata + META_SZ + *offset)/align_to );		//recalculate total data zones
+	*total_memory_zones -= ( (*local_metadata + META_SZ + *offset -1)/align_to +1 );		//recalculate total data zones
 }
 
 
@@ -253,16 +254,14 @@ void* small_chunck_malloc(size_t align_to){
 
 
 
-	#ifdef DEBUG_MALLOC
-	printf("Allocated a zone of %llu out of %llu, offset= %llu, metadata= %llu\n",align_to, total_memory_zones, offset , (local_metadata + META_SZ + offset) );
-    #endif // DEBUG_MALLOC
+
 
 	while( 1 ){	//while we have valid/empty pages -> we search for a free zone
 
 		unsigned char *after_struct = page_to_after_struct( current_table);	//pointer to metadata
 
 
-		if( (( meta* )current_table)->full == 0 ){	//we check  to see if we marked the page as full
+		if( (( meta* )current_table)->full == 1 ){	//we check  to see if we marked the page as full
 
 			if( (( meta* )current_table)->next == NULL ){	//if this is the last page -> create new page
 				(( meta* )current_table)->next = create_new_metadata_page( NULL );
@@ -281,13 +280,12 @@ void* small_chunck_malloc(size_t align_to){
                 printf("mmaped a new page for level %llu\n",level );
                 #endif // DEBUG_MALLOC
 
-				++(((meta*)table_head[level])->total_pagini) ;  //incrementez numarul de pagini
+				(((meta*)table_head[level])->total_pagini) = (((meta*)table_head[level])->total_pagini) + 1;  //incrementez numarul de pagini
 				(( meta* )current_table)->next->prev = current_table;
-				((meta*)current_table)->size =  level;
+				((meta*)current_table)->next->size =  level;
 			}
 			current_table = (( meta* )current_table)->next ;	//if succesful -> move to this page
-			if(  current_table == NULL )
-				break;
+
 		}
 
 		unsigned char *c = page_to_after_struct( current_table);	//auxiliar non-constant pointer
@@ -306,15 +304,24 @@ void* small_chunck_malloc(size_t align_to){
 				if( real_poz >= total_memory_zones  )	//index out of  valod range
 					break;
 
+                #ifdef DEBUG_MALLOC
+                printf("Allocated a zone of %llu out of %llu at pos %llu, offset= %llu, metadata= %llu\n",align_to, total_memory_zones,real_poz, offset , (local_metadata + META_SZ + offset) );
+                #endif // DEBUG_MALLOC
+
 				real_poz = (real_poz) * align_to;	//we calculate the offset(bytes) to the real data zone
 
 				++(((meta*)current_table)->count) ;
 				++(((meta*)table_head[level])->total_used_data) ;
 
+
+
 				return &c[ local_metadata + real_poz + offset ]; //return the pointer to data
 			}
 
             (( meta* )current_table)->full = 1;
+            #ifdef DEBUG_MALLOC
+            printf("Mrked a page as full at level %llu\n",level );
+            #endif // DEBUG_MALLOC
 
 		 			//if we get here -> failed to find a free zone
 									//so we mark the page as used
@@ -331,7 +338,8 @@ void* small_chunck_malloc(size_t align_to){
 
 
 void* _malloc(size_t size){
-
+    if( size < 4)
+        return 0;
 	if( size <= SMALL_CHUNK_THRESHOLD )     //Daca zona e mica -> pun intr-o pagina de zone
 		return small_chunck_malloc( get_final_size( size ) );
 
@@ -358,24 +366,19 @@ void free_small_chunk(meta* data){
 
 	position /= (1 << (level+2));	//calculez pozitia relativa pe pagina
 
-	printf("Succesfully freed a zone of %d bytes, index = %d\n", 1 << (level +2), position );
-	if( position > 7){
-        int a;
-        a = 3;
-	}
+	printf("Succesfully freed a zone of %d bytes, index = %llu,at page: %llu\n", 1 << (level +2), position,start );
+
 
 	unsigned char byte = 1 << (7 - ( position % 8 ) );	//vom marca zona folosita ca fiind libera
 	position = (position)/8 ;	//calculez byte-ul care stocheaza informatia despre zona
 
-    /*unsigned char old = origin[META_SZ + position];
+    unsigned char old = origin[META_SZ + position];
     old =  ~(byte | ~old );	//marcam bitul free ( 0 )
 	origin[META_SZ + position] = old;
-	byte = 1; byte = ~byte;
-	(((unsigned char*)origin + META_SZ))[local_metadata -1] &= byte;	//marcam pagina ca nu e complet ocupata
-	*/
-	/*metoda veche - foloseam ultimul bit din local_metadata ca flag */
+//	byte = 1; byte = ~byte;
+//	(((unsigned char*)origin + META_SZ))[local_metadata -1] &= byte;	//marcam pagina ca nu e complet ocupata
 
-	(( meta* )origin)->full = 1;
+	(( meta* )origin)->full = 0;
 	--(((meta*)origin)->count) ;
 	if( table_head[level] == NULL ) //Daca lista e goala ma opresc -> input eronat
 		return;
@@ -383,14 +386,27 @@ void free_small_chunk(meta* data){
 
 	--(((meta*)table_head[level])->total_used_data) ;
 	if( ((meta*)table_head[level])->total_pagini > 1 && (((meta*)origin)->count) == 0
-							&& ( ( total_memory_zones * (((meta*)table_head[level])->total_pagini - 1 ) - ((meta*)table_head[level])->total_used_data ) > (1<<(7-level)) )){
-		printf("Attempt to free a page of level %d\n",level);
-		if( origin == table_head[level] ){
+							&& ( ( ( total_memory_zones * (((meta*)table_head[level])->total_pagini - 1 ) )- ((meta*)table_head[level])->total_used_data ) > (1<<(7-level)) )){
 
+		--((meta*)table_head[level])->total_pagini; //updatez statistica
+		printf("Attempt to free a page of level %llu, remaining %llu pages\n",level,((meta*)table_head[level])->total_pagini);
+		if( origin == table_head[level] ){
+            if( ((meta*)origin)->next == NULL  ){
+                #ifdef DEBUG_MALLOC
+                printf("Logic error, trying to free the single page at level %llu\n",level );
+                #endif // DEBUG_MALLOC
+                return;
+            }
+            if( ((meta*)origin)->count != 0 ){
+                #ifdef DEBUG_MALLOC
+                printf("Logic error, page not completly free at level %llu\n",level );
+                #endif // DEBUG_MALLOC
+            }
 			((meta*)origin)->next->total_used_data = ((meta*)origin)->total_used_data;
 			((meta*)origin)->next->total_pagini = ((meta*)origin)->total_pagini  ;      //vreau sa sterg prima pagina din lista nivelului curent
+
 			((meta*)origin)->next->prev = 0;                                            //Asa ca voi copia datele statistice ale listei la urmatoare pagina
-            ((meta*)origin)->next->size = ((meta*)origin)->size;
+            //((meta*)origin)->next->size = ((meta*)origin)->size;
 			table_head[level] = ((meta*)origin)->next;
 		}else{
 			if( ((meta*)origin)->next  )
@@ -398,15 +414,29 @@ void free_small_chunk(meta* data){
 			if( ((meta*)origin)->prev )
 				((meta*)origin)->prev->next = ((meta*)origin)->next;
 		}
-		--((meta*)table_head[level])->total_pagini; //updatez statistica
-		munmap( origin , PAGE_FILE );
+
+
+		if(  munmap( origin , PAGE_FILE )  == -1){        //Daca e zona mmapata -> munmap
+            #ifdef DEBUG_MALLOC
+            printf("Failed to munmap one pages\n" );
+            #endif // DEBUG_MALLOC
+            return;
+		}
+		#ifdef DEBUG_MALLOC
+            printf("Succesfully munmaped one page\n" );
+        #endif // DEBUG_MALLOC
+
 	}
+
+
+
+
 
 }
 
 void _free(void* data, size_t size  ){
 	if( (unsigned long long)data % PAGE_FILE == 0  && size >  SMALL_CHUNK_THRESHOLD){	//big data mmap
-		if(  munmap( data , to_page_multiple(size) )  == 1){        //Daca e zona mmapata -> munmap
+		if(  munmap( data , to_page_multiple(size) )  == -1){        //Daca e zona mmapata -> munmap
             #ifdef DEBUG_MALLOC
             printf("Failed to munmap %llu pages\n",to_page_multiple(size) / PAGE_FILE );
             #endif // DEBUG_MALLOC
@@ -432,7 +462,7 @@ void* _calloc(size_t count, size_t size){
 		return 0;
 	if( count > (MAX_ALLOWED_SIZE / size) )	//too much memory
 		return 0;
-	char *data = malloc( count * size );
+	char *data = _malloc( count * size );
 	if( count * size <  SMALL_CHUNK_THRESHOLD)
 		memset( data , 0 , count * size );
 	return data;
@@ -445,6 +475,8 @@ void* _realloc(void *data,size_t old_size,  size_t new_size ){
 	//return data -> if reallocation is not necessary
 	//return 0 -> if size(s) is/are too big
 	//return MAP_FAILED if failed to remap + failed to map a new zone or failed malloc
+    if( new_size == 0 ||  old_size == 0 )
+        return data;
 
 	new_size = _max( new_size , 4) ;
 	if( new_size > MAX_ALLOWED_SIZE ||  old_size > MAX_ALLOWED_SIZE ){
@@ -536,6 +568,49 @@ void* _realloc(void *data,size_t old_size,  size_t new_size ){
 
 
 }
+
+
+
+void  check_page( void *page){
+    size_t level = ((meta*)page)->size;
+    size_t align_to = 1 << ( level + 2);
+    size_t total_memory_zones, local_metadata, offset ;	//calculez metadata pentru pagina
+	calculate_metadata( &total_memory_zones, &local_metadata, &offset, 1 << (level+2) );
+    int i = 0 ;
+    unsigned char* ptr = ((meta*)page);
+    printf("Page address: %llu",page);
+
+
+
+    if( ((meta*)page)->full == 1 ){
+        printf("\nPage marked as full at %llu\n",page);
+        return;
+    }
+    for( i=0; i < local_metadata; ++i)
+        if( ptr[ META_SZ + i] & _FREE ){
+            printf("\nStill ocupied zone of %llu at level %llu , byte %llu -> %llu\n",align_to,level,i, ptr[ META_SZ + i]);
+            //return;
+        }
+
+    printf("   Everything is OK!\n");
+
+
+}
+
+void _malloc_check_remaining_data(){
+    int i;
+    for(i=0; i <10;++i){
+        if( table_head[i] == NULL )
+            continue;
+        meta *aux = table_head[i];
+        while( aux ){
+            check_page( aux );
+            aux = aux->next;
+        }
+    }
+
+}
+
 
 
 
